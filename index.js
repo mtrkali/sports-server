@@ -31,16 +31,27 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     //await client.connect();
+
+
+
     
     const db = client.db('sportsClub')
     const bookingCollection = db.collection('booking');
-    
+    const usersCollection = db.collection('users');
 
     // booking api ---- post + get + patch + put
     app.post('/booking', async(req, res) =>{
         const newBooking = req.body;
         const result = await bookingCollection.insertOne(newBooking)
         res.send(result);
+    })
+
+
+    //userscollection post + get + patch + put 
+    app.post('/users', async(req, res) =>{
+      const newUser = req.body;
+      const result = await usersCollection.insertOne(newUser);
+      res.send(result);
     })
 
 

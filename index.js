@@ -73,11 +73,24 @@ async function run() {
       res.send(result);
     })
 
+    app.get('/bookings/:id', async(req, res)=>{
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)}
+      const result = await bookingCollection.findOne(query);
+      res.send(result);
+    })
+
+    app.patch('/bookings/:id', async(req, res) =>{
+      const id = req.params.id;
+      const paidBooking = req.body;
+      const result = await bookingCollection.updateOne({_id: new ObjectId(id)},{$set: paidBooking})
+      res.send(result);
+    })
 
 
     //userscollection post + get + patch + put 
 
-    //user + post
+    //user + post   
     app.post('/users', async(req, res) =>{
       const newUser = req.body;
       const result = await usersCollection.insertOne(newUser);
@@ -131,7 +144,7 @@ async function run() {
     })
 
     //coupons + patch
-    app.patch('/copuns/:id', async(req, res) =>{
+    app.patch('/coupons/:id', async(req, res) =>{
       const id = req.params.id;
       const updatedData = req.body;
       const result = await couponsCollection.updateOne({_id: new ObjectId(id)},{$set:updatedData})

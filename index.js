@@ -66,6 +66,15 @@ async function run() {
       res.send(result);
     })
 
+    app.get('/booking/confirmed', async(req, res)=>{
+      const {email, status} = req.query;
+      let query = {};
+      if(email)query.requestBy = email;
+      if(status)query.status = status;
+      const result = await bookingCollection.find(query).toArray();
+      res.send(result);
+    })
+
     app.delete('/booking/:id', async(req, res)=>{
       const id = req.params.id;
       const query = {_id: new ObjectId(id)}
@@ -87,6 +96,19 @@ async function run() {
       res.send(result);
     })
 
+    //admin - API(booking)
+    app.get('/booking/pending', async(req, res) =>{
+      const status = req.query.status;
+      const result = await bookingCollection.find({status: status}).toArray();
+      res.send(result);
+    })
+
+    app.patch('/booking/approve/:id', async(req, res) =>{
+      const id = req.params.id;
+      const approveBooking = req.body
+      const result = await bookingCollection.updateOne({_id: new ObjectId(id)},{$set: approveBooking})
+      res.send(result);
+    })
 
     //userscollection post + get + patch + put 
 
@@ -94,6 +116,30 @@ async function run() {
     app.post('/users', async(req, res) =>{
       const newUser = req.body;
       const result = await usersCollection.insertOne(newUser);
+      res.send(result);
+    })
+
+               //admin
+    app.get('/users/member', async(req, res) =>{
+      const result = await usersCollection.find({role: 'member'}).toArray();
+      res.send(result);
+    })
+
+    //admin
+    app.patch('/users/rejectmember/:email', async(req, res)=>{
+      const email = req.params.email;
+      const updatedDoc = req.body;
+      const result = await usersCollection.updateOne({email: email},{$set:updatedDoc})
+      res.send(result);
+    })
+
+    app.post ('/users/google', async(req, res)=>{
+      const userInfo = req.body;
+      const result = await usersCollection.updateOne(
+        {email: userInfo.email},
+        {$set:{last_signIn: userInfo.last_signIn,}, $setOnInsert:{createdAt:userInfo.createdAt, role: userInfo.role, name: userInfo.name}},
+        {upsert: true}
+      )
       res.send(result);
     })
 
@@ -105,6 +151,13 @@ async function run() {
         query = {email: email}
       }
       const result = await usersCollection.find(query).toArray();
+      res.send(result);
+    })
+
+    app.patch('/users/:email', async(req, res)=>{
+      const email = req.params.email;
+      const upatedDoc = req.body;
+      const result = await usersCollection.updateOne({email: email},{$set: upatedDoc})
       res.send(result);
     })
 

@@ -121,9 +121,16 @@ async function run() {
 
                //admin
     app.get('/users/member', async(req, res) =>{
-      const result = await usersCollection.find({role: 'member'}).toArray();
+      const search = req.query.search || '';  
+      const query = {
+        role: 'member',
+        name: {$regex: search, $options: 'i'}
+      }
+      const result = await usersCollection.find(query).toArray();
       res.send(result);
     })
+
+    
 
     //admin
     app.patch('/users/rejectmember/:email', async(req, res)=>{
@@ -143,16 +150,26 @@ async function run() {
       res.send(result);
     })
 
-    //user + get 
+    //user + get  admin
     app.get('/users', async(req, res)=>{
-      const email = req.query.email
+      const {email,name} = req.query
       let query = {}
       if(email){
         query = {email: email}
       }
+      if(name){
+        query = {name: {$regex: name, $options: 'i'}}
+      }
       const result = await usersCollection.find(query).toArray();
       res.send(result);
     })
+
+    app.delete('/users/:id', async(req, res)=>{
+      const id = req.params.id;
+      const result = await usersCollection.deleteOne({_id: new ObjectId(id)})
+      res.send(result);
+    })
+
 
     app.patch('/users/:email', async(req, res)=>{
       const email = req.params.email;

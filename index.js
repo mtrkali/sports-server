@@ -39,7 +39,8 @@ async function run() {
     const bookingCollection = db.collection('booking');
     const usersCollection = db.collection('users');
     const announcementsCollection = db.collection('announcements')
-    const couponsCollection = db.collection('coupons')
+    const couponsCollection = db.collection('coupons');
+    const courtsCollection = db.collection('courts');
 
     // booking api ---- post + get + patch + put
     app.post('/booking', async(req, res) =>{
@@ -218,6 +219,55 @@ async function run() {
       const id = req.params.id;
       const updatedData = req.body;
       const result = await couponsCollection.updateOne({_id: new ObjectId(id)},{$set:updatedData})
+      res.send(result);
+    })
+
+
+
+
+    //couts collection data --Admin
+    app.post('/courts', async(req, res)=>{
+      const newCourt = req.body;
+      const result = await courtsCollection.insertOne(newCourt)
+      res.send(result);
+    })
+
+    app.get('/courts', async(req, res)=>{
+      const result = await courtsCollection.find().toArray();
+      res.send(result);
+    })
+
+    app.get('/courts/:id', async(req, res)=>{
+      const id = req.params.id;
+      const result = await courtsCollection.findOne({_id: new ObjectId(id)});
+      res.send(result);
+    })
+
+    app.delete('/courts/:id', async(req, res) =>{
+      const id = req.params.id;
+      const result = await courtsCollection.deleteOne({_id: new ObjectId(id)})
+      res.send(result);
+    })
+
+    app.patch('/courts/:id', async(req, res)=>{
+      const id = req.params.id;
+      const updatedDoc = req.body;
+      const result = await courtsCollection.updateOne({_id: new ObjectId(id)}, {$set: updatedDoc})
+      res.send(result)
+    })
+
+    app.get('/booking/manageConfirmedBooings', async(req, res)=>{
+      const {query} = req.query;
+      const filter = {
+        payment: 'paid',
+        status: 'confirmed',
+        $or:[
+          {courtName: {$regex: query, $options:'i'}},
+          {bookingId: {$regex: query, $options: 'i'}},
+          {requestBy:{$regex: query, $options:'i'}}
+        ]
+      }
+      const result = await bookingCollection.find(filter).toArray();
       res.send(result);
     })
 

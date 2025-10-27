@@ -182,9 +182,28 @@ async function run() {
 
     //announcements api 
 
-    //announcements + get
+    //announcements + get //admin
     app.get('/announcements', async(req,res)=>{
       const result = await announcementsCollection.find().toArray();
+      res.send(result);
+    })
+
+    app.patch('/announcements/:id', async(req, res)=>{
+      const id = req.params.id;
+      const updatedDoc = req.body;
+      const result = await announcementsCollection.updateOne({_id: new ObjectId(id)},{$set: updatedDoc});
+      res.send(result);
+    })
+
+    app.delete('/announcements/:id',async(req, res) =>{
+      const id = req.params.id;
+      const result = await announcementsCollection.deleteOne({_id: new ObjectId(id)})
+      res.send(result);
+    })
+
+    app.post('/announcements', async(req, res)=>{
+      const newData = req.body;
+      const result = await announcementsCollection.insertOne(newData)
       res.send(result);
     })
 

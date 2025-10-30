@@ -1,7 +1,8 @@
-  const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const admin = require("firebase-admin");
 
 //load environment variable from env file --
 dotenv.config();
@@ -12,6 +13,12 @@ const port = process.env.PORT || 5000;
 //middle ware --
 app.use(cors());
 app.use(express.json());
+
+var serviceAccount = require("./firebase-admin-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.rwjljqx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -36,36 +43,79 @@ async function run() {
     const couponsCollection = db.collection("coupons");
     const courtsCollection = db.collection("courts");
 
-    //main agregate api
-    app.get("/admin/overview", async (req, res) => {
-     const result = await usersCollection.aggregate([
-      {
-        $facet: {
-          totalUsers: [{$count: 'count'}],
-          totalMembers: [
-            {$match: {role: 'member'}},
-            {$count: 'count'},
-          ],
-
-          adminInfo: [
-            {$match: {role: 'admin'}},
-            {$project: {_id: 0, name: 1, email: 1, Image: 1}}
-          ]
-        }
+    //custom middleware --
+    const verifyFBToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).send({ message: "unAuthorized user" });
       }
-     ]).toArray();
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "unauthorized user" });
+      }
+      //verify token
+      try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded = decoded;
+        next();
+      } catch (error) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    };
 
-     const courtsCount = await courtsCollection.countDocuments();
+    //verify admin --
+    const verifyAdmin = async(req, res, next)=>{
+      const email = req.decoded.email;
+      const user = await usersCollection.findOne({email: email})
+      if(!user || user.role !== 'admin'){
+        return res.status(403).send({message: 'forbidden access'})
+      }
+      next();
+    }
 
-     const data = result[0];
-     res.send({
-      adminInfo: data.adminInfo[0] || {},
-      stats: {
-        totalCourts: courtsCount,
-        totalUsers: data.totalUsers[0]?.count || 0,
-        totalMembers: data.totalMembers[0]?.count || 0,
-      },
-     });
+
+    //verify role 
+    app.get('/users/:email/role', async(req, res)=>{
+      const email = req.params.email;
+      const find = {email: email};
+      const result = await usersCollection.findOne(find);
+      res.send({role: result.role || 'user'});
+    })
+
+
+    
+    //main agregate api
+    app.get("/admin/overview",verifyFBToken, verifyAdmin, async (req, res) => {
+      const result = await usersCollection
+        .aggregate([
+          {
+            $facet: {
+              totalUsers: [{ $count: "count" }],
+              totalMembers: [
+                { $match: { role: "member" } },
+                { $count: "count" },
+              ],
+
+              adminInfo: [
+                { $match: { role: "admin" } },
+                { $project: { _id: 0, name: 1, email: 1, image: 1 } },
+              ],
+            },
+          },
+        ])
+        .toArray();
+
+      const courtsCount = await courtsCollection.countDocuments();
+
+      const data = result[0];
+      res.send({
+        adminInfo: data.adminInfo[0] || {},
+        stats: {
+          totalCourts: courtsCount,
+          totalUsers: data.totalUsers[0]?.count || 0,
+          totalMembers: data.totalMembers[0]?.count || 0,
+        },
+      });
     });
 
     // booking api ---- post + get + patch + put
@@ -75,8 +125,11 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking", async (req, res) => {
+    app.get("/booking", verifyFBToken, async (req, res) => {
       const { email, status } = req.query;
+      if(req.decoded.email !== email){
+        return res.status(403).send({message: 'forbidden access'});
+      }
       let query = {};
       if (email) query.requestBy = email;
       if (status) query.status = status;
@@ -127,13 +180,13 @@ async function run() {
     });
 
     //admin - API(booking)
-    app.get("/booking/pending", async (req, res) => {
+    app.get("/booking/pending",verifyFBToken, verifyAdmin, async (req, res) => {
       const status = req.query.status;
       const result = await bookingCollection.find({ status: status }).toArray();
       res.send(result);
     });
 
-    app.patch("/booking/approve/:id", async (req, res) => {
+    app.patch("/booking/approve/:id",verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const approveBooking = req.body;
       const result = await bookingCollection.updateOne(
@@ -153,7 +206,7 @@ async function run() {
     });
 
     //admin
-    app.get("/users/member", async (req, res) => {
+    app.get("/users/member",verifyFBToken, verifyAdmin, async (req, res) => {
       const search = req.query.search || "";
       const query = {
         role: "member",
@@ -164,7 +217,7 @@ async function run() {
     });
 
     //admin
-    app.patch("/users/rejectmember/:email", async (req, res) => {
+    app.patch("/users/rejectmember/:email",verifyFBToken, verifyAdmin, async (req, res) => {
       const email = req.params.email;
       const { role, removeMemberAt } = req.body;
 
@@ -197,7 +250,7 @@ async function run() {
     });
 
     //user + get  admin
-    app.get("/users", async (req, res) => {
+    app.get("/users",verifyFBToken, async (req, res) => {
       const { email, name } = req.query;
       let query = {};
       if (email) {
@@ -210,7 +263,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/users/:id", async (req, res) => {
+    app.delete("/users/:id",verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await usersCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
@@ -234,7 +287,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/announcements/:id", async (req, res) => {
+    app.patch("/announcements/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const updatedDoc = req.body;
       const result = await announcementsCollection.updateOne(
@@ -244,7 +297,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/announcements/:id", async (req, res) => {
+    app.delete("/announcements/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await announcementsCollection.deleteOne({
         _id: new ObjectId(id),
@@ -252,7 +305,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/announcements", async (req, res) => {
+    app.post("/announcements",verifyFBToken,verifyAdmin, async (req, res) => {
       const newData = req.body;
       const result = await announcementsCollection.insertOne(newData);
       res.send(result);
@@ -260,7 +313,7 @@ async function run() {
 
     // coupons collection --
     //coupons + post
-    app.post("/coupons", async (req, res) => {
+    app.post("/coupons",verifyFBToken,verifyAdmin, async (req, res) => {
       const newCoupon = req.body;
       const result = await couponsCollection.insertOne(newCoupon);
       res.send(result);
@@ -272,7 +325,7 @@ async function run() {
     });
 
     //coupons + delete
-    app.delete("/coupons/:id", async (req, res) => {
+    app.delete("/coupons/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await couponsCollection.deleteOne(query);
@@ -280,7 +333,7 @@ async function run() {
     });
 
     //coupons + patch
-    app.patch("/coupons/:id", async (req, res) => {
+    app.patch("/coupons/:id",verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const updatedData = req.body;
       const result = await couponsCollection.updateOne(
@@ -291,7 +344,7 @@ async function run() {
     });
 
     //couts collection data --Admin
-    app.post("/courts", async (req, res) => {
+    app.post("/courts",verifyFBToken, verifyAdmin, async (req, res) => {
       const newCourt = req.body;
       const result = await courtsCollection.insertOne(newCourt);
       res.send(result);
@@ -308,7 +361,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/courts/:id", async (req, res) => {
+    app.delete("/courts/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await courtsCollection.deleteOne({
         _id: new ObjectId(id),
@@ -316,7 +369,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/courts/:id", async (req, res) => {
+    app.patch("/courts/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const updatedDoc = req.body;
       const result = await courtsCollection.updateOne(
@@ -326,7 +379,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking/manageConfirmedBooings", async (req, res) => {
+    app.get("/booking/manageConfirmedBooings",verifyFBToken,verifyAdmin, async (req, res) => {
       const { query } = req.query;
       const filter = {
         payment: "paid",

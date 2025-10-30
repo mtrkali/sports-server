@@ -381,6 +381,9 @@ async function run() {
 
     app.get("/booking/manageConfirmedBooings",verifyFBToken,verifyAdmin, async (req, res) => {
       const { query } = req.query;
+      if(!query)query = '';
+
+
       const filter = {
         payment: "paid",
         status: "confirmed",

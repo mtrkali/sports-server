@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 
+
 //load environment variable from env file --
 dotenv.config();
 
@@ -11,10 +12,22 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 //middle ware --
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://simple-firebase-auth-c3104.web.app",
+    ],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
-var serviceAccount = require("./firebase-admin-key.json");
+const decodedKey = Buffer.from(
+  process.env.FB_SERVICE_KEY.replace(/-/g, "+").replace(/_/g, "/"),
+  "base64"
+).toString("utf8");
+const serviceAccount = JSON.parse(decodedKey);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -64,28 +77,25 @@ async function run() {
     };
 
     //verify admin --
-    const verifyAdmin = async(req, res, next)=>{
+    const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
-      const user = await usersCollection.findOne({email: email})
-      if(!user || user.role !== 'admin'){
-        return res.status(403).send({message: 'forbidden access'})
+      const user = await usersCollection.findOne({ email: email });
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
       }
       next();
-    }
+    };
 
-
-    //verify role 
-    app.get('/users/:email/role', async(req, res)=>{
+    //verify role
+    app.get("/users/:email/role", async (req, res) => {
       const email = req.params.email;
-      const find = {email: email};
+      const find = { email: email };
       const result = await usersCollection.findOne(find);
-      res.send({role: result.role || 'user'});
-    })
+      res.send({ role: result.role || "user" });
+    });
 
-
-    
     //main agregate api
-    app.get("/admin/overview",verifyFBToken, verifyAdmin, async (req, res) => {
+    app.get("/admin/overview", verifyFBToken, verifyAdmin, async (req, res) => {
       const result = await usersCollection
         .aggregate([
           {
@@ -125,10 +135,10 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking", verifyFBToken, async (req, res) => {
+    app.get("/booking",verifyFBToken, async (req, res) => {
       const { email, status } = req.query;
-      if(req.decoded.email !== email){
-        return res.status(403).send({message: 'forbidden access'});
+      if (req.decoded.email !== email) {
+        return res.status(403).send({ message: "forbidden access" });
       }
       let query = {};
       if (email) query.requestBy = email;
@@ -137,7 +147,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking/approved", async (req, res) => {
+    app.get("/booking/approved",verifyFBToken , async (req, res) => {
       const { email, status } = req.query;
       let query = {};
       if (email) query.requestBy = email;
@@ -146,7 +156,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking/confirmed", async (req, res) => {
+    app.get("/booking/confirmed",verifyFBToken, async (req, res) => {
       const { email, status } = req.query;
       let query = {};
       if (email) query.requestBy = email;
@@ -180,21 +190,32 @@ async function run() {
     });
 
     //admin - API(booking)
-    app.get("/booking/pending",verifyFBToken, verifyAdmin, async (req, res) => {
-      const status = req.query.status;
-      const result = await bookingCollection.find({ status: status }).toArray();
-      res.send(result);
-    });
+    app.get(
+      "/booking/pending",
+      verifyFBToken,
+      async (req, res) => {
+        const status = req.query.status;
+        const result = await bookingCollection
+          .find({ status: status })
+          .toArray();
+        res.send(result);
+      }
+    );
 
-    app.patch("/booking/approve/:id",verifyFBToken, verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const approveBooking = req.body;
-      const result = await bookingCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: approveBooking }
-      );
-      res.send(result);
-    });
+    app.patch(
+      "/booking/approve/:id",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const approveBooking = req.body;
+        const result = await bookingCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: approveBooking }
+        );
+        res.send(result);
+      }
+    );
 
     //userscollection post + get + patch + put
 
@@ -206,7 +227,7 @@ async function run() {
     });
 
     //admin
-    app.get("/users/member",verifyFBToken, verifyAdmin, async (req, res) => {
+    app.get("/users/member", verifyFBToken, verifyAdmin, async (req, res) => {
       const search = req.query.search || "";
       const query = {
         role: "member",
@@ -217,20 +238,25 @@ async function run() {
     });
 
     //admin
-    app.patch("/users/rejectmember/:email",verifyFBToken, verifyAdmin, async (req, res) => {
-      const email = req.params.email;
-      const { role, removeMemberAt } = req.body;
+    app.patch(
+      "/users/rejectmember/:email",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const email = req.params.email;
+        const { role, removeMemberAt } = req.body;
 
-      const updatedDoc = { $set: { role } };
-      if (removeMemberAt) {
-        updatedDoc.$unset = { memberAt: "" };
+        const updatedDoc = { $set: { role } };
+        if (removeMemberAt) {
+          updatedDoc.$unset = { memberAt: "" };
+        }
+        const result = await usersCollection.updateOne(
+          { email: email },
+          updatedDoc
+        );
+        res.send(result);
       }
-      const result = await usersCollection.updateOne(
-        { email: email },
-        updatedDoc
-      );
-      res.send(result);
-    });
+    );
 
     app.post("/users/google", async (req, res) => {
       const userInfo = req.body;
@@ -250,7 +276,7 @@ async function run() {
     });
 
     //user + get  admin
-    app.get("/users",verifyFBToken, async (req, res) => {
+    app.get("/users", verifyFBToken, async (req, res) => {
       const { email, name } = req.query;
       let query = {};
       if (email) {
@@ -263,7 +289,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/users/:id",verifyFBToken, verifyAdmin, async (req, res) => {
+    app.delete("/users/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await usersCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
@@ -271,12 +297,16 @@ async function run() {
 
     app.patch("/users/:email", async (req, res) => {
       const email = req.params.email;
-      const upatedDoc = req.body;
-      const result = await usersCollection.updateOne(
-        { email: email },
-        { $set: upatedDoc }
-      );
-      res.send(result);
+      const user = await usersCollection.findOne({ email: email });
+      if (user.role === "user") {
+        const upatedDoc = req.body;
+        const result = await usersCollection.updateOne(
+          { email: email },
+          { $set: upatedDoc }
+        );
+        res.send(result);
+      }
+      res.end();
     });
 
     //announcements api
@@ -287,25 +317,35 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/announcements/:id",verifyFBToken,verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const updatedDoc = req.body;
-      const result = await announcementsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updatedDoc }
-      );
-      res.send(result);
-    });
+    app.patch(
+      "/announcements/:id",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const updatedDoc = req.body;
+        const result = await announcementsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updatedDoc }
+        );
+        res.send(result);
+      }
+    );
 
-    app.delete("/announcements/:id",verifyFBToken,verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const result = await announcementsCollection.deleteOne({
-        _id: new ObjectId(id),
-      });
-      res.send(result);
-    });
+    app.delete(
+      "/announcements/:id",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const result = await announcementsCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+        res.send(result);
+      }
+    );
 
-    app.post("/announcements",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.post("/announcements", verifyFBToken, verifyAdmin, async (req, res) => {
       const newData = req.body;
       const result = await announcementsCollection.insertOne(newData);
       res.send(result);
@@ -313,7 +353,7 @@ async function run() {
 
     // coupons collection --
     //coupons + post
-    app.post("/coupons",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.post("/coupons", verifyFBToken, verifyAdmin, async (req, res) => {
       const newCoupon = req.body;
       const result = await couponsCollection.insertOne(newCoupon);
       res.send(result);
@@ -325,7 +365,7 @@ async function run() {
     });
 
     //coupons + delete
-    app.delete("/coupons/:id",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.delete("/coupons/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await couponsCollection.deleteOne(query);
@@ -333,7 +373,7 @@ async function run() {
     });
 
     //coupons + patch
-    app.patch("/coupons/:id",verifyFBToken, verifyAdmin, async (req, res) => {
+    app.patch("/coupons/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const updatedData = req.body;
       const result = await couponsCollection.updateOne(
@@ -344,7 +384,7 @@ async function run() {
     });
 
     //couts collection data --Admin
-    app.post("/courts",verifyFBToken, verifyAdmin, async (req, res) => {
+    app.post("/courts", verifyFBToken, verifyAdmin, async (req, res) => {
       const newCourt = req.body;
       const result = await courtsCollection.insertOne(newCourt);
       res.send(result);
@@ -361,7 +401,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/courts/:id",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.delete("/courts/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await courtsCollection.deleteOne({
         _id: new ObjectId(id),
@@ -369,7 +409,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/courts/:id",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.patch("/courts/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const updatedDoc = req.body;
       const result = await courtsCollection.updateOne(
@@ -379,23 +419,26 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booking/manageConfirmedBooings",verifyFBToken,verifyAdmin, async (req, res) => {
-      const { query } = req.query;
-      if(!query)query = '';
+    app.get(
+      "/booking/manageConfirmedBooings",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { query } = req.query;
 
-
-      const filter = {
-        payment: "paid",
-        status: "confirmed",
-        $or: [
-          { courtName: { $regex: query, $options: "i" } },
-          { bookingId: { $regex: query, $options: "i" } },
-          { requestBy: { $regex: query, $options: "i" } },
-        ],
-      };
-      const result = await bookingCollection.find(filter).toArray();
-      res.send(result);
-    });
+        const filter = {
+          payment: "paid",
+          status: "confirmed",
+          $or: [
+            { courtName: { $regex: query, $options: "i" } },
+            { bookingId: { $regex: query, $options: "i" } },
+            { requestBy: { $regex: query, $options: "i" } },
+          ],
+        };
+        const result = await bookingCollection.find(filter).toArray();
+        res.send(result);
+      }
+    );
 
     await client.db("admin").command({ ping: 1 });
     console.log(
